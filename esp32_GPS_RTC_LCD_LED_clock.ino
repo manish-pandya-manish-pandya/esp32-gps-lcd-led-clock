@@ -1,11 +1,11 @@
-// Sketch uses 327777 bytes (25%) of program storage space. Maximum is 1310720 bytes.
-// Global variables use 21176 bytes (6%) of dynamic memory, leaving 306504 bytes for local variables. Maximum is 327680 bytes.
-
-//#define LCD_ATTACHED
+#define LCD_ATTACHED
 #define LCD_I2C_ATTACHED
+#define LED_DISPLAY_ATTACHED
 
 #include <RTClib.h>
+#ifdef LED_DISPLAY_ATTACHED
 #include <TM1637Display.h>
+#endif
 #include <Time.h>
 #include <TimeLib.h>
 #include <EEPROM.h>
@@ -19,8 +19,8 @@
 
 //#################################################################################
 
-#define DS3231_SCL 22 //esp32 dev default SCL GPIO
-#define DS3231_SDA 21 //esp32 dev default SDA GPIO
+#define ESP32_SCL 22 //esp32 dev default SCL GPIO
+#define ESP32_SDA 21 //esp32 dev default SDA GPIO
 
 RTC_DS3231 rtc;
 
@@ -29,7 +29,10 @@ RTC_DS3231 rtc;
 #define TM1637_DIO 25
 #define TM1637_CLK 26
 
+#ifdef LED_DISPLAY_ATTACHED
+//TM1637 is not I2C (bit-bang protocol), so don't put it on WIRE lib and same pins;
 TM1637Display display(TM1637_CLK, TM1637_DIO);
+#endif
 
 //#################################################################################
 
@@ -67,7 +70,7 @@ LiquidCrystal lcd(LCD_RS, LCD_EN, LCD_D4, LCD_D5, LCD_D6, LCD_D7);
 
 #ifdef LCD_I2C_ATTACHED
 
-LiquidCrystal_I2C lcd(0x27, 16, 2);
+LiquidCrystal_I2C i2clcd(0x27, 16, 2);
 
 #endif
 
@@ -116,12 +119,19 @@ String twoDigitFormat(const uint8_t n) {
 }
 
 void writeLCD(String topLine, String bottomLine) {
-#if defined(LCD_ATTACHED) || defined(LCD_I2C_ATTACHED)
+#ifdef LCD_ATTACHED
   lcd.clear();
   lcd.print(topLine);
   // go to row 1 column 0, note that this is indexed at 0
   lcd.setCursor(0,1); 
   lcd.print (bottomLine);
+#endif
+#ifdef LCD_I2C_ATTACHED
+  i2clcd.clear();
+  i2clcd.print(topLine);
+  // go to row 1 column 0, note that this is indexed at 0
+  i2clcd.setCursor(0,1); 
+  i2clcd.print (bottomLine);
 #endif
 }
 
@@ -139,7 +149,7 @@ void turnLCDBackLightOn() {
       digitalWrite(LCD_BACK_LIGHT, HIGH);
 #endif
 #ifdef LCD_I2C_ATTACHED
-      lcd.backlight();
+      i2clcd.backlight();
 #endif 
 }
 
@@ -148,7 +158,7 @@ void turnLCDBackLightOff() {
     digitalWrite(LCD_BACK_LIGHT, LOW);
 #endif
 #ifdef LCD_I2C_ATTACHED
-      lcd.noBacklight();
+      i2clcd.noBacklight();
 #endif
 }
 
@@ -193,9 +203,11 @@ void digitalClockDisplay(int offset, bool relayEnabledLocal) {
   } else {
     digitalWrite(SECONDS_RELAY, LOW);
   }
+#ifdef LED_DISPLAY_ATTACHED
   uint8_t data[] = {display.encodeDigit(uint8_t (h / 10)), display.encodeDigit(uint8_t (h % 10)) | secdot, display.encodeDigit(uint8_t (minute() / 10)), display.encodeDigit(uint8_t (minute() % 10))};
 	display.setSegments(data);
   //display.setBrightness(second() % 8); //brightness in rotation seven steps
+#endif
   String timestr = String("     " + twoDigitFormat(h) + ":" + twoDigitFormat(minute()) + ":" + twoDigitFormat(second()) + ampm);
   writeLCD(datestr, timestr);
 }
@@ -225,11 +237,11 @@ void setup() {
   lcd.begin(16, 2);
 #endif
 
-  Wire.begin(DS3231_SDA, DS3231_SCL);
+  Wire.begin(ESP32_SDA, ESP32_SCL);
 
 #ifdef LCD_I2C_ATTACHED
   // initialize LCD display
-  lcd.init();
+  i2clcd.init();
 #endif
 
   // Serial Monitor
@@ -246,11 +258,12 @@ void setup() {
   // read the last TZ offset from flash memory
   tz_offset = readTZ();
 
+#ifdef LED_DISPLAY_ATTACHED
   // Set brightness controll for the LCD controller
   display.setBrightness(7); // Sets the brightness level to 3
   display.clear();
+#endif
 
-  Wire.begin(DS3231_SDA, DS3231_SCL);
   if (!rtc.begin()) {
     Serial.println("RTC not detected");
   } else {
@@ -323,7 +336,7 @@ void loop() {
       byte Month, Day, Hour, Minute, Second;
       gps.crack_datetime(&Year, &Month, &Day, &Hour, &Minute, &Second, NULL, &age);
       DateTime now = rtc.now();
-      if ((!prevGPSSync) || ((age < 500) && (now.secondstime() > (prevGPSSync + 300)))) {
+      if ((!prevGPSSync) || ((age < 500) && (now.secondstime() >= (prevGPSSync + 300)))) {
         prevGPSSync = now.secondstime();
         // set the Time to the latest GPS reading
         Serial.println( "Setting time from gps : " + String(prevGPSSync));
