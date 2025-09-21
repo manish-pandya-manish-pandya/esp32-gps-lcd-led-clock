@@ -1,6 +1,7 @@
-#define LCD_ATTACHED
+//#define LCD_ATTACHED
 #define LCD_I2C_ATTACHED
 #define LED_DISPLAY_ATTACHED
+#define LIGHT_SENSOR_ATTACHED
 
 #include <RTClib.h>
 #ifdef LED_DISPLAY_ATTACHED
@@ -17,6 +18,12 @@
 #include <LiquidCrystal_I2C.h>
 #endif
 
+//#################################################################################
+#ifdef LIGHT_SENSOR_ATTACHED
+// ALS-PT19 Adafruit light sensor
+
+#define LIGHT_SENSOR_PIN 36
+#endif
 //#################################################################################
 
 #define ESP32_SCL 22 //esp32 dev default SCL GPIO
@@ -146,28 +153,28 @@ String tzOffsetFormat(int offset) {
 
 void turnLCDBackLightOn() {
 #ifdef LCD_ATTACHED
-      digitalWrite(LCD_BACK_LIGHT, HIGH);
+  digitalWrite(LCD_BACK_LIGHT, HIGH);
 #endif
 #ifdef LCD_I2C_ATTACHED
-      i2clcd.backlight();
+  i2clcd.backlight();
 #endif 
 }
 
 void turnLCDBackLightOff() {
 #ifdef LCD_ATTACHED
-    digitalWrite(LCD_BACK_LIGHT, LOW);
+  digitalWrite(LCD_BACK_LIGHT, LOW);
 #endif
 #ifdef LCD_I2C_ATTACHED
-      i2clcd.noBacklight();
+  i2clcd.noBacklight();
 #endif
 }
 
 int upPressed() {
-  return (touchRead(TOUCH_up) < 50) && (touchRead(TOUCH_down) > 50);
+  return (touchRead(TOUCH_up) < 50) && (touchRead(TOUCH_down) > 50) && (touchRead(TOUCH_relay) > 50);
 }
 
 int downPressed() {
-  return (touchRead(TOUCH_up) > 50) && (touchRead(TOUCH_down) < 50);
+  return (touchRead(TOUCH_down) < 50) && (touchRead(TOUCH_up) > 50) && (touchRead(TOUCH_relay) > 50);
 }
 
 int relayPressed() {
@@ -204,7 +211,17 @@ void digitalClockDisplay(int offset, bool relayEnabledLocal) {
     digitalWrite(SECONDS_RELAY, LOW);
   }
 #ifdef LED_DISPLAY_ATTACHED
-  uint8_t data[] = {display.encodeDigit(uint8_t (h / 10)), display.encodeDigit(uint8_t (h % 10)) | secdot, display.encodeDigit(uint8_t (minute() / 10)), display.encodeDigit(uint8_t (minute() % 10))};
+#ifdef LIGHT_SENSOR_ATTACHED
+  int lightValue = analogRead(LIGHT_SENSOR_PIN);
+  Serial.print("Raw Light Reading: ");
+  Serial.print(lightValue);
+  Serial.print(" -> ");
+  //if (lightValue >= 800) lightValue = 799;
+  Serial.println((int)(lightValue / 512));
+  display.setBrightness((int)(lightValue / 512)); // Sets the brightness level to 3
+#endif
+
+  uint8_t data[] = {(uint8_t (h / 10)) ? display.encodeDigit(uint8_t (h / 10)) : B00000000, display.encodeDigit(uint8_t (h % 10)) | secdot, display.encodeDigit(uint8_t (minute() / 10)), display.encodeDigit(uint8_t (minute() % 10))};
 	display.setSegments(data);
   //display.setBrightness(second() % 8); //brightness in rotation seven steps
 #endif
@@ -223,6 +240,11 @@ bool relayEnabled = false; // operate relay when on
 //#################################################################################
 
 void setup() {
+
+#ifdef LIGHT_SENSOR_ATTACHED
+  // Light sensor ALS-PT19
+  pinMode(LIGHT_SENSOR_PIN, INPUT);
+#endif
 
 #ifdef LCD_ATTACHED
   // LCD backlight
@@ -283,35 +305,36 @@ void loop() {
   // Check if timezone offset is being incremented or decremented
   int saved_tz_offset = tz_offset;
   if(upPressed()) {
-    delay(1000);
+    delay(100);
+    lcdBackLightOn = prevDisplay;
+    turnLCDBackLightOn();
     while(upPressed()) {
-      lcdBackLightOn = prevDisplay;
-      turnLCDBackLightOn();
+      delay(750);
       tz_offset += 1;
       if (tz_offset > MAX_TZ_offset) tz_offset = MIN_TZ_offset;
       writeLCD("Setting TZ:", "UTC + " + tzOffsetFormat(tz_offset));
       Serial.println("Setting TZ: UTC + " + tzOffsetFormat(tz_offset));
-      delay(750);
     }
   } else if(downPressed()) {
-    delay(1000);
+    delay(100);
+    lcdBackLightOn = prevDisplay;
+    turnLCDBackLightOn();
     while(downPressed()) {
-      lcdBackLightOn = prevDisplay;
-      turnLCDBackLightOn();
+      delay(750);
       tz_offset -= 1;
       if (tz_offset < MIN_TZ_offset) tz_offset = MAX_TZ_offset;
       writeLCD("Setting TZ:", "UTC+ " + tzOffsetFormat(tz_offset));
       Serial.println("Setting TZ: UTC+ " + tzOffsetFormat(tz_offset));
-      delay(750);
     }
   } else if(relayPressed()) {
-    delay(1000);
+    delay(100);
+    bool previousRelayEnabled = relayEnabled;
+    lcdBackLightOn = prevDisplay;
+    turnLCDBackLightOn();
     while(relayPressed()) {
-      lcdBackLightOn = prevDisplay;
-      turnLCDBackLightOn();
-      delay(750);
+      delay(300);
+      relayEnabled = !previousRelayEnabled;
     }
-    relayEnabled = !relayEnabled;
   }
   if (saved_tz_offset != tz_offset) {
     saveTZ(tz_offset);
