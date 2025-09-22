@@ -2,6 +2,7 @@
 #define LCD_I2C_ATTACHED
 #define LED_DISPLAY_ATTACHED
 #define LIGHT_SENSOR_ATTACHED
+#define LCD_SPI_ATTACHED
 
 #include <RTClib.h>
 #ifdef LED_DISPLAY_ATTACHED
@@ -17,6 +18,7 @@
 #ifdef LCD_I2C_ATTACHED
 #include <LiquidCrystal_I2C.h>
 #endif
+
 
 //#################################################################################
 #ifdef LIGHT_SENSOR_ATTACHED
@@ -191,7 +193,9 @@ void digitalClockDisplay(int offset, bool relayEnabledLocal) {
 
   String datestr = String("      " + String(year()) + "/" + twoDigitFormat(month()) + "/" + twoDigitFormat(day()));
   String ampm = " AM";
-  uint8_t h = hour();
+  uint8_t rawh = hour();
+  uint8_t h = rawh;
+
   if (h > 11) {
     ampm = " PM";
     if (h > 12) {
@@ -212,13 +216,17 @@ void digitalClockDisplay(int offset, bool relayEnabledLocal) {
   }
 #ifdef LED_DISPLAY_ATTACHED
 #ifdef LIGHT_SENSOR_ATTACHED
-  int lightValue = analogRead(LIGHT_SENSOR_PIN);
-  Serial.print("Raw Light Reading: ");
-  Serial.print(lightValue);
-  Serial.print(" -> ");
-  //if (lightValue >= 800) lightValue = 799;
-  Serial.println((int)(lightValue / 512));
-  display.setBrightness((int)(lightValue / 512)); // Sets the brightness level to 3
+  if (rawh < 8 || rawh > 8) {
+    int lightValue = analogRead(LIGHT_SENSOR_PIN);
+    Serial.print("Raw Light Reading: ");
+    Serial.print(lightValue);
+    if (lightValue > 2048) {
+      lightValue = 2047;
+    }
+    Serial.print(" -> ");
+    Serial.println((int)(lightValue / 256));
+    display.setBrightness((int)(lightValue / 256)); // Sets the brightness level to 3
+  }
 #endif
 
   uint8_t data[] = {(uint8_t (h / 10)) ? display.encodeDigit(uint8_t (h / 10)) : B00000000, display.encodeDigit(uint8_t (h % 10)) | secdot, display.encodeDigit(uint8_t (minute() / 10)), display.encodeDigit(uint8_t (minute() % 10))};
