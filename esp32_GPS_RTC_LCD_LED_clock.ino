@@ -1,23 +1,65 @@
-//#define LCD_ATTACHED
-#define LCD_I2C_ATTACHED
-#define LED_DISPLAY_ATTACHED
-#define LIGHT_SENSOR_ATTACHED
-#define LCD_SPI_ATTACHED
+////#define LCD_ATTACHED
+//#define LCD_I2C_ATTACHED
+//#define LED_DISPLAY_ATTACHED
+//#define LIGHT_SENSOR_ATTACHED
+//#define RTC_ATTACHED
+#define LCD_ILI9488_SPI_ATTACHED
 
+#ifdef RTC_ATTACHED
 #include <RTClib.h>
+#endif
+
 #ifdef LED_DISPLAY_ATTACHED
 #include <TM1637Display.h>
 #endif
+
 #include <Time.h>
 #include <TimeLib.h>
 #include <EEPROM.h>
 #include <TinyGPS.h>
+
 #ifdef LCD_ATTACHED
 #include <LiquidCrystal.h>
 #endif
+
 #ifdef LCD_I2C_ATTACHED
 #include <LiquidCrystal_I2C.h>
 #endif
+
+#ifdef LCD_ILI9488_SPI_ATTACHED
+#include <TFT_eSPI.h>
+
+#include <SD.h>
+#include <sd_defines.h>
+#include <sd_diskio.h>
+#include <SPI.h>
+
+#include <FS.h>
+#include <FSImpl.h>
+#include <vfs_api.h>
+
+#include <TJpg_Decoder.h>
+#endif
+
+#ifdef LCD_ILI9488_SPI_ATTACHED
+//#################################################################################
+// MUST match in Setup21_ILI9488.h
+#define TFT_MISO 19 // (leave TFT SDO disconnected if other SPI devices share MISO)
+#define TFT_MOSI 23
+#define TFT_SCLK 18
+#define TFT_CS   15  // Chip select control pin
+#define TFT_DC   2  // Data Command control pin
+#define TFT_RST  -1  // Reset pin (could connect to RST pin)
+
+//#define TOUCH_CS 3 // could not get the touch sensor to work
+
+#define SD_SCS 4
+#define SPI_SD_FREQUENCY 40000000 // 40MHz
+
+TFT_eSPI tft = TFT_eSPI();
+//#################################################################################
+#endif
+
 
 
 //#################################################################################
@@ -31,7 +73,9 @@
 #define ESP32_SCL 22 //esp32 dev default SCL GPIO
 #define ESP32_SDA 21 //esp32 dev default SDA GPIO
 
+#ifdef RTC_ATTACHED
 RTC_DS3231 rtc;
+#endif
 
 //#################################################################################
 
@@ -184,7 +228,7 @@ int relayPressed() {
 }
 
 void digitalClockDisplay(int offset, bool relayEnabledLocal) {
-
+#ifdef RTC_ATTACHED
   DateTime now = rtc.now();
   // set the Time to the latest GPS reading
   setTime(now.hour(), now.minute(), now.second(), now.day(), now.month(), now.year());
@@ -235,7 +279,98 @@ void digitalClockDisplay(int offset, bool relayEnabledLocal) {
 #endif
   String timestr = String("     " + twoDigitFormat(h) + ":" + twoDigitFormat(minute()) + ":" + twoDigitFormat(second()) + ampm);
   writeLCD(datestr, timestr);
+#endif
 }
+
+#ifdef LCD_ILI9488_SPI_ATTACHED
+
+String file_list[40];
+int file_num = 0;
+int file_index = 0;
+
+void setupLCDandSD(void) {
+  pinMode(SD_SCS, OUTPUT);
+  tft.init();
+  tft.fillScreen(random(0xFFFF));
+  tft.setSwapBytes(true); // We need to swap the colour bytes (endianess)
+  yield();
+
+
+  //SD(HSPI) init
+  if (!SD.begin(SD_SCS, tft.getSPIinstance(), SPI_SD_FREQUENCY)) {
+    Serial.println("Card Mount Failed");
+    while (1) delay(0);
+  } else {
+    Serial.println("Card Mount Successeded");
+  }
+  //sd_test();
+  file_num = get_pic_list(SD, "/", 0, file_list);
+  Serial.print("jpg file count:");
+  Serial.println(file_num);
+  Serial.println("All jpg:");
+  for (int i = 0; i < file_num; i++) {
+    Serial.println(file_list[i]);
+  }
+  //SPI_OFF_SD;
+
+  // The jpeg image can be scaled by a factor of 1, 2, 4, or 8
+  TJpgDec.setJpgScale(1);
+
+  // The decoder must be given the exact name of the rendering function above
+  TJpgDec.setCallback(tft_output);
+}
+
+// This next function will be called during decoding of the jpeg file to
+// render each block to the TFT.  If you use a different TFT library
+// you will need to adapt this function to suit.
+bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t* bitmap)
+{
+   // Stop further decoding as image is running off bottom of screen
+  if ( y >= tft.height() ) {
+    Serial.println ("image is larger than viewport");
+    return 0;
+  }
+  
+  // This function will clip the image block rendering automatically at the TFT boundaries
+  tft.pushImage(x, y, w, h, bitmap);
+
+  // Return 1 to decode next block
+  return 1;
+}
+
+//Gets all image files in the SD card root directory
+int get_pic_list(fs::FS &fs, const char *dirname, uint8_t levels, String wavlist[30]) {
+  Serial.printf("Listing directory: %s\n", dirname);
+  int i = 0;
+
+  File root = fs.open(dirname);
+  if (!root) {
+    Serial.println("Failed to open directory");
+    return i;
+  }
+  if (!root.isDirectory()) {
+    Serial.println("Not a directory");
+    return i;
+  }
+
+  File file = root.openNextFile();
+  while (file) {
+    if (file.isDirectory()) {
+    } else {
+      String temp = file.name();
+      String lowerTemp = file.name();
+      lowerTemp.toLowerCase();
+      if (lowerTemp.endsWith(".jpg") || lowerTemp.endsWith(".jpeg")) {
+        wavlist[i] = temp;
+        i++;
+      }
+    }
+    file = root.openNextFile();
+  }
+  return i;
+}
+#endif
+
 
 
 //#################################################################################
@@ -267,7 +402,9 @@ void setup() {
   lcd.begin(16, 2);
 #endif
 
+#if defined(LCD_I2C_ATTACHED) || defined(LED_DISPLAY_ATTACHED)
   Wire.begin(ESP32_SDA, ESP32_SCL);
+#endif
 
 #ifdef LCD_I2C_ATTACHED
   // initialize LCD display
@@ -294,14 +431,40 @@ void setup() {
   display.clear();
 #endif
 
+#ifdef RTC_ATTACHED
   if (!rtc.begin()) {
     Serial.println("RTC not detected");
   } else {
     //Serial.println("RTC detected");
   }
+#endif
+
+#ifdef LCD_ILI9488_SPI_ATTACHED
+  setupLCDandSD();
+#endif
 }
 
+
+long int runtime = millis();
+int flag = 1;
+
+
 void loop() {
+  if ((millis() - runtime > 10000) || flag == 1) {
+    Serial.print("Displaying -> ");
+    Serial.println(file_list[file_index].c_str());
+    String filename = "/" + file_list[file_index].c_str();
+    TJpgDec.drawSdJpg(0, 0, filename);
+    file_index++;
+    if (file_index >= file_num) {
+      file_index = 0;
+    }
+    runtime = millis();
+    flag = 0;
+  }
+
+
+#ifdef RTC_ATTACHED
   // Display time from RTC
   DateTime now = rtc.now();
   uint32_t nowsecs = now.secondstime();
@@ -377,4 +540,6 @@ void loop() {
       }
     }
   }
+#endif
+
 }
