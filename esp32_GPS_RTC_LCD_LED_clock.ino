@@ -1,7 +1,7 @@
-//#define LCD_I2C_ATTACHED
-//#define LED_DISPLAY_ATTACHED
-//#define LIGHT_SENSOR_ATTACHED
-//#define RTC_ATTACHED
+#define LCD_I2C_ATTACHED
+#define LED_DISPLAY_ATTACHED
+#define LIGHT_SENSOR_ATTACHED
+#define RTC_ATTACHED
 #define LCD_ILI9488_SPI_ATTACHED
 
 #ifdef RTC_ATTACHED
@@ -225,17 +225,15 @@ void digitalClockDisplay(int offset, bool relayEnabledLocal) {
     }
 #ifdef LED_DISPLAY_ATTACHED
 #ifdef LIGHT_SENSOR_ATTACHED
-    if (rawh < 8 || rawh > 8) {
-        int lightValue = analogRead(LIGHT_SENSOR_PIN);
-        Serial.print("Raw Light Reading: ");
-        Serial.print(lightValue);
-        if (lightValue > 2048) {
-            lightValue = 2047;
-        }
-        Serial.print(" -> ");
-        Serial.println((int)(lightValue / 256));
-        display.setBrightness((int)(lightValue / 256)); // Sets the brightness level to 3
+    int lightValue = analogRead(LIGHT_SENSOR_PIN);
+    Serial.print("Raw Light Reading: ");
+    Serial.print(lightValue);
+    if (lightValue > 79) {
+        lightValue = 79;
     }
+    Serial.print(" -> ");
+    Serial.println((int)(lightValue / 10));
+    display.setBrightness((int)(lightValue / 10)); // Sets the brightness level to 3
 #endif
 
     uint8_t data[] = {
@@ -417,7 +415,7 @@ void loop() {
     if ((millis() - runtime > 10000) || flag == 1) {
         Serial.print("Displaying -> ");
         Serial.println(file_list[file_index].c_str());
-        String filename = "/" + file_list[file_index].c_str();
+        String filename = String("/") + file_list[file_index].c_str();
         TJpgDec.drawSdJpg(0, 0, filename);
         file_index++;
         if (file_index >= file_num) {
