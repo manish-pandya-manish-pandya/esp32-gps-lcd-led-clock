@@ -192,7 +192,7 @@ int relayPressed() {
     return (touchRead(TOUCH_relay) < 50) && (touchRead(TOUCH_up) > 50) && (touchRead(TOUCH_down) > 50);
 }
 
-void digitalClockDisplay(int offset, bool relayEnabledLocal) {
+void digitalClockDisplay(int offset) {
 #ifdef RTC_ATTACHED
     DateTime now = rtc.now();
     // set the Time to the latest GPS reading
@@ -215,13 +215,6 @@ void digitalClockDisplay(int offset, bool relayEnabledLocal) {
     byte secdot = B00000000;
     if (second() % 2) {
         secdot = B10000000;
-        if(relayEnabledLocal) {
-            digitalWrite(SECONDS_RELAY, HIGH);
-        } else {
-            digitalWrite(SECONDS_RELAY, LOW);
-        }
-    } else {
-        digitalWrite(SECONDS_RELAY, LOW);
     }
 #ifdef LED_DISPLAY_ATTACHED
 #ifdef LIGHT_SENSOR_ATTACHED
@@ -343,8 +336,6 @@ int get_pic_list(fs::FS &fs, const char *dirname, uint8_t levels, String wavlist
 }
 #endif
 
-
-
 //#################################################################################
 // Global variables
 uint32_t prevDisplay = 0; // when the digital clock was displayed
@@ -352,7 +343,17 @@ int tz_offset = 0; // timezone offset
 time_t lcdBackLightOn = 0; // when the digital clock was displayed
 uint32_t prevGPSSync = 0; // when the RTC was synced with GPS
 bool relayEnabled = false; // operate relay when on
+hw_timer_t *Timer0_Cfg = NULL; // seconds relay
+long int runtime = millis(); // Photo Frame 
+int flag = 1; // Photo Frame 
 //#################################################################################
+
+void IRAM_ATTR Timer0_ISR()
+{
+    if(relayEnabled) {
+        digitalWrite(SECONDS_RELAY, !digitalRead(SECONDS_RELAY));
+    }
+}
 
 void setup() {
 
@@ -404,12 +405,11 @@ void setup() {
 #ifdef LCD_ILI9488_SPI_ATTACHED
     setupLCDandSD();
 #endif
+
+    Timer0_Cfg = timerBegin(1000000);
+    timerAttachInterrupt(Timer0_Cfg, &Timer0_ISR);
+    timerAlarm(Timer0_Cfg, 1000000, true, 0);
 }
-
-
-long int runtime = millis();
-int flag = 1;
-
 
 void loop() {
     if ((millis() - runtime > 10000) || flag == 1) {
@@ -432,7 +432,7 @@ void loop() {
     uint32_t nowsecs = now.secondstime();
     if (nowsecs != prevDisplay) { //update the display only if the time has changed
         prevDisplay = nowsecs;
-        digitalClockDisplay(tz_offset, relayEnabled);
+        digitalClockDisplay(tz_offset);
     }
 
     // Check if timezone offset is being incremented or decremented
