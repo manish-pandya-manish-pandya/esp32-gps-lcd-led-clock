@@ -1,4 +1,5 @@
 #define LCD_I2C_ATTACHED
+#define TEMP_SENSOR_ATTACHED
 #define LED_DISPLAY_ATTACHED
 #define LIGHT_SENSOR_ATTACHED
 #define RTC_ATTACHED
@@ -16,6 +17,10 @@
 #include <TimeLib.h>
 #include <EEPROM.h>
 #include <TinyGPS.h>
+
+#ifdef TEMP_SENSOR_ATTACHED
+#include <DHT.h>
+#endif
 
 #ifdef LCD_I2C_ATTACHED
 #include <LiquidCrystal_I2C.h>
@@ -52,10 +57,15 @@
 #define SPI_SD_FREQUENCY 40000000 // 40MHz
 
 TFT_eSPI tft = TFT_eSPI();
-//#################################################################################
 #endif
 
+//#################################################################################
 
+#ifdef TEMP_SENSOR_ATTACHED
+#define DHTPIN 27
+#define DHTTYPE DHT11
+DHT dht(DHTPIN, DHTTYPE);
+#endif
 
 //#################################################################################
 #ifdef LIGHT_SENSOR_ATTACHED
@@ -109,7 +119,7 @@ LiquidCrystal_I2C i2clcd(0x27, 16, 2);
 
  // Define the RX and TX pins for Serial 2
 #define GPS_RXD2 5
-// #define GPS_TXD2 4 // unused due to one way communication
+#define GPS_TXD2 4 // unused by GPS due to one way communication, so, we reuse for SD Card
 
 #define GPS_BAUD 9600
 
@@ -201,6 +211,25 @@ void digitalClockDisplay(int offset) {
     adjustTime(offset * SECS_PER_MIN * 30);
 
     String datestr = String("      " + String(year()) + "/" + twoDigitFormat(month()) + "/" + twoDigitFormat(day()));
+#ifdef TEMP_SENSOR_ATTACHED
+    if (second() %2) {
+        // Reading temperature or humidity takes about 250 milliseconds!
+        // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
+        float h = dht.readHumidity();
+        // Read temperature as Fahrenheit (isFahrenheit = true)
+        float f = dht.readTemperature(true);
+
+        // Check if any reads failed and exit early (to try again).
+        if (isnan(h) || isnan(f)) {
+            Serial.println(F("Failed to read from DHT sensor!"));
+        } else {
+            // Compute heat index in Fahrenheit (the default)
+            // float hif = dht.computeHeatIndex(f, h);
+            datestr = String(String(h) + "%mm " + String(f) + "°F");
+        }
+    }
+#endif
+
     String ampm = " AM";
     uint8_t h = hour();
 
@@ -339,10 +368,10 @@ void IRAM_ATTR Timer0_ISR()
 #ifdef LED_DISPLAY_ATTACHED
     byte secdot = B00000000;
     if (second() % 2) {
-        secdot = B10000000;
         digitalWrite(SECONDS_RELAY, LOW);
     } else if(relayEnabled){
         digitalWrite(SECONDS_RELAY, HIGH);
+        secdot = B10000000;
     }
 
     uint8_t h = hour();
@@ -383,6 +412,10 @@ void setup() {
     Serial.begin(115200);
     delay(1000);
 
+#ifdef TEMP_SENSOR_ATTACHED
+    pinMode(DHTPIN, INPUT_PULLUP);
+    dht.begin();
+#endif
     // Start Serial 2 with the defined RX and TX pins and a baud rate of 9600
     gpsSerial.begin(GPS_BAUD, SERIAL_8N1, GPS_RXD2, GPS_TXD2);
 
