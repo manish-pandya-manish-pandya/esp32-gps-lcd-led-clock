@@ -109,7 +109,7 @@ LiquidCrystal_I2C i2clcd(0x27, 16, 2);
 
  // Define the RX and TX pins for Serial 2
 #define GPS_RXD2 5
-#define GPS_TXD2 4
+// #define GPS_TXD2 4 // unused due to one way communication
 
 #define GPS_BAUD 9600
 
@@ -202,22 +202,13 @@ void digitalClockDisplay(int offset) {
 
     String datestr = String("      " + String(year()) + "/" + twoDigitFormat(month()) + "/" + twoDigitFormat(day()));
     String ampm = " AM";
-    uint8_t rawh = hour();
-    uint8_t h = rawh;
+    uint8_t h = hour();
 
     if (h > 11) {
         ampm = " PM";
-        if (h > 12) {
-            h -= 12;
-        }
     }
 
-    byte secdot = B00000000;
-    if (second() % 2) {
-        secdot = B10000000;
-    }
-#ifdef LED_DISPLAY_ATTACHED
-#ifdef LIGHT_SENSOR_ATTACHED
+#if defined(LED_DISPLAY_ATTACHED) && defined(LIGHT_SENSOR_ATTACHED)
     int lightValue = analogRead(LIGHT_SENSOR_PIN);
     Serial.print("Raw Light Reading: ");
     Serial.print(lightValue);
@@ -229,15 +220,6 @@ void digitalClockDisplay(int offset) {
     display.setBrightness((int)(lightValue / 10)); // Sets the brightness level to 3
 #endif
 
-    uint8_t data[] = {
-        (uint8_t (h / 10)) ? display.encodeDigit(uint8_t (h / 10)) : B00000000,
-        display.encodeDigit(uint8_t (h % 10)) | secdot,
-        display.encodeDigit(uint8_t (minute() / 10)),
-        display.encodeDigit(uint8_t (minute() % 10))
-    };
-	display.setSegments(data);
-    //display.setBrightness(second() % 8); //brightness in rotation seven steps
-#endif
     String timestr = String(
         "     " + twoDigitFormat(h) +
         ":" + twoDigitFormat(minute()) +
@@ -346,13 +328,36 @@ bool relayEnabled = false; // operate relay when on
 hw_timer_t *Timer0_Cfg = NULL; // seconds relay
 long int runtime = millis(); // Photo Frame 
 int flag = 1; // Photo Frame 
+byte secdot = B00000000;
 //#################################################################################
 
 void IRAM_ATTR Timer0_ISR()
 {
-    if(relayEnabled) {
-        digitalWrite(SECONDS_RELAY, !digitalRead(SECONDS_RELAY));
+    // if(relayEnabled) {
+    //     digitalWrite(SECONDS_RELAY, !digitalRead(SECONDS_RELAY));
+    // }
+#ifdef LED_DISPLAY_ATTACHED
+    byte secdot = B00000000;
+    if (second() % 2) {
+        secdot = B10000000;
+        digitalWrite(SECONDS_RELAY, LOW);
+    } else if(relayEnabled){
+        digitalWrite(SECONDS_RELAY, HIGH);
     }
+
+    uint8_t h = hour();
+    if (h > 12) {
+        h -= 12;
+    }
+    uint8_t data[] = {
+        (uint8_t (h / 10)) ? display.encodeDigit(uint8_t (h / 10)) : B00000000,
+        display.encodeDigit(uint8_t (h % 10)) | secdot,
+        display.encodeDigit(uint8_t (minute() / 10)),
+        display.encodeDigit(uint8_t (minute() % 10))
+    };
+	display.setSegments(data);
+    //display.setBrightness(second() % 8); //brightness in rotation seven steps
+#endif
 }
 
 void setup() {
@@ -412,19 +417,25 @@ void setup() {
 }
 
 void loop() {
+#ifdef LCD_ILI9488_SPI_ATTACHED
     if ((millis() - runtime > 10000) || flag == 1) {
-        Serial.print("Displaying -> ");
-        Serial.println(file_list[file_index].c_str());
-        String filename = String("/") + file_list[file_index].c_str();
-        TJpgDec.drawSdJpg(0, 0, filename);
-        file_index++;
-        if (file_index >= file_num) {
-            file_index = 0;
+        uint8_t h = hour();
+        if (h > 5 && h < 21) {
+            Serial.print("Displaying -> ");
+            Serial.println(file_list[file_index].c_str());
+            String filename = String("/") + file_list[file_index].c_str();
+            TJpgDec.drawSdJpg(0, 0, filename);
+            file_index++;
+            if (file_index >= file_num) {
+                file_index = 0;
+            }
+            runtime = millis();
+            flag = 0;
+        } else {
+            tft.fillScreen(TFT_BLACK);
         }
-        runtime = millis();
-        flag = 0;
     }
-
+#endif
 
 #ifdef RTC_ATTACHED
     // Display time from RTC
