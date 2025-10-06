@@ -369,8 +369,12 @@ void IRAM_ATTR Timer0_ISR()
     byte secdot = B00000000;
     if (second() % 2) {
         digitalWrite(SECONDS_RELAY, LOW);
-    } else if(relayEnabled){
-        digitalWrite(SECONDS_RELAY, HIGH);
+    } else {
+        if (relayEnabled) {
+            digitalWrite(SECONDS_RELAY, HIGH);
+        } else {
+            digitalWrite(SECONDS_RELAY, LOW);
+        }
         secdot = B10000000;
     }
 
