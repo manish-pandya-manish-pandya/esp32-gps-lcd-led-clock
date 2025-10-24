@@ -202,6 +202,8 @@ int relayPressed() {
     return (touchRead(TOUCH_relay) < 50) && (touchRead(TOUCH_up) > 50) && (touchRead(TOUCH_down) > 50);
 }
 
+int humidity = NAN;
+int temprature = NAN;
 void digitalClockDisplay(int offset) {
 #ifdef RTC_ATTACHED
     DateTime now = rtc.now();
@@ -210,23 +212,18 @@ void digitalClockDisplay(int offset) {
     // apply TZ offset
     adjustTime(offset * SECS_PER_MIN * 30);
 
-    String datestr = String("      " + String(year()) + "/" + twoDigitFormat(month()) + "/" + twoDigitFormat(day()));
 #ifdef TEMP_SENSOR_ATTACHED
-    if (second() %2) {
-        // Reading temperature or humidity takes about 250 milliseconds!
-        // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
-        float h = dht.readHumidity();
-        // Read temperature as Fahrenheit (isFahrenheit = true)
-        float f = dht.readTemperature(true);
+    // Reading temperature or humidity takes about 250 milliseconds!
+    // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
+    humidity = dht.readHumidity();
+    // Read temperature as Fahrenheit (isFahrenheit = true)
+    temprature = dht.readTemperature(true);
 
-        // Check if any reads failed and exit early (to try again).
-        if (isnan(h) || isnan(f)) {
-            Serial.println(F("Failed to read from DHT sensor!"));
-        } else {
-            // Compute heat index in Fahrenheit (the default)
-            // float hif = dht.computeHeatIndex(f, h);
-            datestr = String(String(h) + "%mm " + String(f) + "°F");
-        }
+    // Check if any reads failed and exit early (to try again).
+    if (isnan(humidity) || isnan(temprature)) {
+        Serial.println(F("Failed to read from DHT sensor!"));
+        humidity = NAN;
+        temprature = NAN;
     }
 #endif
 
@@ -249,12 +246,36 @@ void digitalClockDisplay(int offset) {
     display.setBrightness((int)(lightValue / 10)); // Sets the brightness level to 3
 #endif
 
-    String timestr = String(
-        "     " + twoDigitFormat(h) +
-        ":" + twoDigitFormat(minute()) +
-        ":" + twoDigitFormat(second()) + ampm
-    );
-    writeLCD(datestr, timestr);
+    if (isnan(humidity) || isnan(temprature)) {
+        String datestr = String(
+            "      " + String(year()) +
+            "/" + twoDigitFormat(month()) +
+            "/" + twoDigitFormat(day()));
+
+        String timestr = String(
+            "     " + twoDigitFormat(h) +
+            ":" + twoDigitFormat(minute()) +
+            ":" + twoDigitFormat(second()) + ampm
+        );
+        writeLCD(datestr, timestr);
+        humidity = NAN;
+        temprature = NAN;
+    } else {
+        char datestr[17];
+        char timestr[17];
+        sprintf(datestr, "%2d%%mm %4d/%02d/%02d",
+            humidity,
+            year(),
+            month(),
+            day());
+        sprintf(timestr, "%2d'f %02d:%02d:%02d%s",
+            temprature,
+            h,
+            minute(),
+            second(),
+            ampm);
+        writeLCD(datestr, timestr);
+    }
 #endif
 }
 
@@ -275,7 +296,6 @@ void setupLCDandSD(void) {
     //SD(HSPI) init
     if (!SD.begin(SD_SCS, tft.getSPIinstance(), SPI_SD_FREQUENCY)) {
         Serial.println("Card Mount Failed");
-        while (1) delay(0);
     } else {
         Serial.println("Card Mount Successeded");
     }
@@ -382,14 +402,25 @@ void IRAM_ATTR Timer0_ISR()
     if (h > 12) {
         h -= 12;
     }
-    uint8_t data[] = {
-        (uint8_t (h / 10)) ? display.encodeDigit(uint8_t (h / 10)) : B00000000,
-        display.encodeDigit(uint8_t (h % 10)) | secdot,
-        display.encodeDigit(uint8_t (minute() / 10)),
-        display.encodeDigit(uint8_t (minute() % 10))
-    };
-	display.setSegments(data);
-    //display.setBrightness(second() % 8); //brightness in rotation seven steps
+
+    if (isnan(humidity) || isnan(temprature) || (second() % 30 > 2)) {
+        uint8_t data[] = {
+            (uint8_t (h / 10)) ? display.encodeDigit(uint8_t (h / 10)) : B00000000,
+            display.encodeDigit(uint8_t (h % 10)) | secdot,
+            display.encodeDigit(uint8_t (minute() / 10)),
+            display.encodeDigit(uint8_t (minute() % 10))
+        };
+        display.setSegments(data);
+    } else {
+        uint8_t data[] = {
+            B00000000,
+            (uint8_t (temprature / 100)) ? display.encodeDigit(uint8_t (temprature / 100)) : B00000000,
+            display.encodeDigit(uint8_t ((temprature % 100) / 10)),
+            display.encodeDigit(uint8_t (temprature % 10))
+        };
+        display.setSegments(data);
+    }
+
 #endif
 }
 
